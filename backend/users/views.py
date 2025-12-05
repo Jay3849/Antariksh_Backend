@@ -135,50 +135,97 @@ class LoginView(viewsets.ViewSet):
             "refresh": str(refresh)
         })
 
-# CHANGE PASSWORD (USER LOGGED-IN + OTP REQUIRED)
 class ChangePasswordView(viewsets.ViewSet):
 
-    @action(detail=False, methods=["post"])
-    def send_otp(self, request):
-        user = request.user
+    def _get_user_by_url(self, pk):
+        try:
+            return User.objects.get(id=pk)
+        except User.DoesNotExist:
+            raise ValidationError({"detail": "User not found"})
 
-        if not user.is_verified:
-            return Response({"detail": "User not verified"}, status=400)
+    def _validate_logged_in_user(self, request, pk):
+        # 1️⃣ Must be logged-in
+        if not request.user or not request.user.is_authenticated:
+            raise ValidationError({"detail": "Authentication required"})
+
+        url_user = self._get_user_by_url(pk)
+        logged_user = request.user
+
+        # 2️⃣ URL user must match logged-in user
+        if url_user.id != logged_user.id:
+            raise ValidationError({"detail": "This user id not valid"})
+
+        # 3️⃣ User must be verified
+        if not logged_user.is_verified:
+            raise ValidationError({"detail": "User is not verified"})
+
+        # 4️⃣ Mobile must be linked
+        if not logged_user.mobile:
+            raise ValidationError({"detail": "Mobile number not linked to this account"})
+
+        return logged_user
+
+    # ---------------------------
+    # STEP 1: SEND OTP
+    # ---------------------------
+    @action(detail=True, methods=["post"])
+    def send_otp(self, request, pk=None):
+        user = self._validate_logged_in_user(request, pk)
 
         otp = user.generate_otp()
-        return Response({"detail": "OTP sent", "otp": otp})
+        return Response({"detail": "OTP sent", "otp": otp}, status=200)
 
-    @action(detail=False, methods=["post"])
-    def verify_otp(self, request):
+    # ---------------------------
+    # STEP 2: VERIFY OTP
+    # ---------------------------
+    @action(detail=True, methods=["post"])
+    def verify_otp(self, request, pk=None):
+        user = self._validate_logged_in_user(request, pk)
+
         serializer = PasswordResetOTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         otp = serializer.validated_data["otp"]
-        user = request.user
 
         if not user.verify_otp(otp):
             return Response({"detail": "Invalid or expired OTP"}, status=400)
 
-        user.temp_otp_verified = True
-        user.save()
+        # Store temporary flag
+        request.session["password_otp_verified"] = True
+        request.session.modified = True
 
         return Response({"detail": "OTP verified. You can now change password."})
 
-    @action(detail=False, methods=["post"])
-    def set_new_password(self, request):
-        user = request.user
+    # ---------------------------
+    # STEP 3: SET NEW PASSWORD
+    # ---------------------------
+    @action(detail=True, methods=["post"])
+    def set_new_password(self, request, pk=None):
+        user = self._validate_logged_in_user(request, pk)
+
+        if not request.session.get("password_otp_verified"):
+            return Response({"detail": "OTP verification required"}, status=400)
 
         serializer = SetNewPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user.password = make_password(serializer.validated_data["new_password"])
+        new_password = serializer.validated_data["new_password"]
+
+        if user.check_password(new_password):
+            return Response({"detail": "New password cannot be same as old password"}, status=400)
+
+        user.password = make_password(new_password)
         user.save()
 
+        # Clear session
+        request.session.pop("password_otp_verified", None)
+
         return Response({"detail": "Password changed successfully"})
+
 
 # FORGOT PASSWORD
 class ForgotPasswordView(viewsets.ViewSet):
 
+    # STEP 1 → SEND OTP
     @action(detail=False, methods=["post"])
     def send_otp(self, request):
         serializer = ForgotPasswordMobileSerializer(data=request.data)
@@ -195,9 +242,9 @@ class ForgotPasswordView(viewsets.ViewSet):
             return Response({"detail": "User not verified. Forgot password not allowed."}, status=400)
 
         otp = user.generate_otp()
+        return Response({"detail": "OTP sent", "otp": otp}, status=200)
 
-        return Response({"detail": "OTP sent", "otp": otp})
-
+    # STEP 2 → VERIFY OTP
     @action(detail=False, methods=["post"])
     def verify_otp(self, request):
         serializer = PasswordResetOTPVerifySerializer(data=request.data)
@@ -205,27 +252,38 @@ class ForgotPasswordView(viewsets.ViewSet):
 
         otp = serializer.validated_data["otp"]
 
-        # OTP verification must search user
+        # Find user by OTP + verify OTP expiration
         try:
             user = User.objects.get(otp=otp)
         except User.DoesNotExist:
             return Response({"detail": "Invalid OTP"}, status=400)
 
-        return Response({"detail": "OTP verified. You can now reset password.", "user_id": user.id})
+        if not user.verify_otp(otp):
+            return Response({"detail": "Invalid or expired OTP"}, status=400)
 
+        return Response({
+            "detail": "OTP verified. You can now reset password.",
+            "user_id": user.id
+        }, status=200)
+
+    # STEP 3 → SET NEW PASSWORD
     @action(detail=False, methods=["post"])
     def set_new_password(self, request):
         serializer = SetNewPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user_id = request.data.get("user_id")
+        if not user_id:
+            return Response({"detail": "user_id is required"}, status=400)
 
         try:
             user = User.objects.get(id=user_id)
-        except:
-            return Response({"detail": "Invalid request"}, status=400)
+        except User.DoesNotExist:
+            return Response({"detail": "Invalid user"}, status=400)
 
-        user.password = make_password(serializer.validated_data["new_password"])
+        new_password = serializer.validated_data["new_password"]
+
+        user.password = make_password(new_password)
         user.save()
 
-        return Response({"detail": "Password reset successful"})
+        return Response({"detail": "Password reset successful"}, status=200)

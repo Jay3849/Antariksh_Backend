@@ -78,9 +78,9 @@ urlpatterns = [
     path('<int:pk>/resend-otp/', resend_otp, name='resend-otp'),
 
     # Change Password (logged-in)
-    path('change-password/send-otp/', change_password_send_otp, name='change-password-send-otp'),
-    path('change-password/verify-otp/', change_password_verify_otp, name='change-password-verify-otp'),
-    path('change-password/set-new-password/', change_password_set_password, name='change-password-set-password'),
+    path('<int:pk>/change-password/send-otp/', change_password_send_otp, name='change-password-send-otp'),
+    path('<int:pk>/change-password/verify-otp/', change_password_verify_otp, name='change-password-verify-otp'),
+    path('<int:pk>/change-password/set-new-password/', change_password_set_password, name='change-password-set-password'),
 
     # Forgot Password
     path('forgot-password/send-otp/', forgot_send_otp, name='forgot-password-send-otp'),
