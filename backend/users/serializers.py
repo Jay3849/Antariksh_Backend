@@ -58,7 +58,6 @@ class UserDetailSerializer(serializers.ModelSerializer):
         fields = ["id", "username", "mobile", "is_verified"]
 
 # CHANGE PASSWORD REQUEST SERIALIZER
-# (old password required)
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True)
@@ -70,7 +69,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         return attrs
 
 # FORGOT PASSWORD REQUEST SERIALIZER
-# (user enters mobile only)
+
 class ForgotPasswordMobileSerializer(serializers.Serializer):
     mobile = serializers.CharField()
 

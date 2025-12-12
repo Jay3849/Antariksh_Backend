@@ -165,9 +165,7 @@ class ChangePasswordView(viewsets.ViewSet):
 
         return logged_user
 
-    # ---------------------------
     # STEP 1: SEND OTP
-    # ---------------------------
     @action(detail=True, methods=["post"])
     def send_otp(self, request, pk=None):
         user = self._validate_logged_in_user(request, pk)
@@ -175,9 +173,7 @@ class ChangePasswordView(viewsets.ViewSet):
         otp = user.generate_otp()
         return Response({"detail": "OTP sent", "otp": otp}, status=200)
 
-    # ---------------------------
     # STEP 2: VERIFY OTP
-    # ---------------------------
     @action(detail=True, methods=["post"])
     def verify_otp(self, request, pk=None):
         user = self._validate_logged_in_user(request, pk)
@@ -195,9 +191,7 @@ class ChangePasswordView(viewsets.ViewSet):
 
         return Response({"detail": "OTP verified. You can now change password."})
 
-    # ---------------------------
     # STEP 3: SET NEW PASSWORD
-    # ---------------------------
     @action(detail=True, methods=["post"])
     def set_new_password(self, request, pk=None):
         user = self._validate_logged_in_user(request, pk)
